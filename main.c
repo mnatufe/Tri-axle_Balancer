@@ -2,9 +2,19 @@
 #include "cmsis_os.h"
 #include <math.h>
 
+#define		ADXL_READ		0x80
+#define		ADXL_MULTI		0x40
+#define 	ADXL_DATAX0		0x32
+
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
+
+float ax, ay, az, angleX, angleY, angleZ;
+uint16_t Vx, Vy, Vz;
+uint8_t TX_Buffer[];
+uint8_t RX_Buffer[]; //Initialize receive buffer for spi comms
+
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -20,6 +30,15 @@ const osThreadAttr_t Read_Angle_Volt_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
+
+osThreadId_t storeAngleHandle;
+const osThreadAttr_t storeAngle_attributes = {
+  .name = "storeAngle",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal
+};
+
+
 /* Definitions for Angle_Convert */
 osThreadId_t Angle_ConvertHandle;
 const osThreadAttr_t Angle_Convert_attributes = {
@@ -127,6 +146,9 @@ int main(void)
 
   /* creation of Read_Angle_Volt */
   Read_Angle_VoltHandle = osThreadNew(Read_Angle, NULL, &Read_Angle_Volt_attributes);
+
+  //Store angle voltage task
+  storeAngleHandle = osThreadNew(store_Angle, NULL, &storeAngle_attributes);
 
   /* creation of Angle_Convert */
   Angle_ConvertHandle = osThreadNew(Angle_Conversion, NULL, &Angle_Convert_attributes);
@@ -338,12 +360,26 @@ void StartDefaultTask(void *argument)
 void Read_Angle(void *argument)
 {
   /* USER CODE BEGIN Read_Angle */
-  /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0;
+    for(int i = 0; i < 7; i++)
+    	TX_Buffer[i] = 0x00;
+	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET); //CS Low
+	HAL_SPI_TransmitReceive_IT(&hspi2, TX_Buffer, RX_Buffer, 7);
   }
   /* USER CODE END Read_Angle */
+}
+void store_Angle(void *argument){
+	for(;;){
+		Read_angle();
+		osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+
+		Vx = (int16_t)((RX_Buffer[2] << 8) | RX_Buffer[1]);
+		Vy = (int16_t)((RX_Buffer[4] << 8) | RX_Buffer[3]);
+		Vz = (int16_t)((RX_Buffer[6] << 8) | RX_Buffer[5]);
+
+	}
 }
 
 /* USER CODE BEGIN Header_Angle_Conversion */
@@ -356,10 +392,11 @@ void Read_Angle(void *argument)
 void Angle_Conversion(void *argument)
 {
   /* USER CODE BEGIN Angle_Conversion */
-	float ax, ay, az, angleX, angleY, angleZ;
   /* Infinite loop */
   for(;;)
   {
+	  store_Angle();
+	  osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
 	  ax = (Vx - 1.65) / 0.300;   // acceleration in g
 	  ay = (Vy - 1.65) / 0.300;
 	  az = (Vz - 1.65) / 0.300;
@@ -400,14 +437,11 @@ void BlinkLED(void *argument)
 void Angle_Show(float x, float y, float z)
 {
   /* USER CODE BEGIN Angle_Show */
-	uint8_t TX_Buffer [];
 
   /* Infinite loop */
   for(;;)
   {
-	  HAL_SPI_Transmit_IT(&hspi1, TX_Buffer, 1); //Sending in Interrupt mode
-	  HAL_Delay(100);
-    osDelay(1);
+	  osDelay(1);
   }
   /* USER CODE END Angle_Show */
 }
@@ -443,6 +477,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 1 */
 
   /* USER CODE END Callback 1 */
+}
+void HAL_SPI_TxRxCpltCallBack(SPI_HandleTypeDef *hspi){
+	if(hspi->Instance == SPI2){
+		HAL_GPIO_WritePin(SPI_CS_PORT, SPI_CS_PIN, GPIO_PIN_SET); //CS HIGH
+		osThreadFlagsSet(realTaskHandle, 0x01); //Wake task
+	}
 }
 
 /**
