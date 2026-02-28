@@ -90,7 +90,7 @@ void StartDefaultTask(void *argument);
 void Read_Angle(void *argument);
 void Angle_Conversion(void *argument);
 void BlinkLED(void *argument);
-void Angle_Show(float x, float y, float z);
+void Angle_Show(char *UART_TX_Buf);
 void Angle_Correct(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -164,6 +164,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -180,7 +181,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+	Read_Angle();
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -360,21 +361,23 @@ void StartDefaultTask(void *argument)
 void Read_Angle(void *argument)
 {
   /* USER CODE BEGIN Read_Angle */
+  TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0; //Sets Transmission buffer
   for(;;)
   {
-    TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0;
     for(int i = 0; i < 7; i++)
-    	TX_Buffer[i] = 0x00;
-	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET); //CS Low
-	HAL_SPI_TransmitReceive_IT(&hspi2, TX_Buffer, RX_Buffer, 7);
+    	TX_Buffer[i] = 0x00;							//Replaces all data in transmission buffer with 0
+	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET); //CS Low, enables ADXL to start transmitting data
+	HAL_SPI_TransmitReceive_IT(&hspi2, TX_Buffer, RX_Buffer, 7);		//SPI_2 pointer, tx buffer, rx buffer, amount of data being exchanged
   }
   /* USER CODE END Read_Angle */
 }
 void store_Angle(void *argument){
 	for(;;){
 		Read_angle();
-		osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+		osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever); //Waits until task done
+		HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET); //CS High, stops transmission
 
+		//Move X, Y, and Z voltages into voltage variables. 16-bits for each axis
 		Vx = (int16_t)((RX_Buffer[2] << 8) | RX_Buffer[1]);
 		Vy = (int16_t)((RX_Buffer[4] << 8) | RX_Buffer[3]);
 		Vz = (int16_t)((RX_Buffer[6] << 8) | RX_Buffer[5]);
@@ -382,13 +385,7 @@ void store_Angle(void *argument){
 	}
 }
 
-/* USER CODE BEGIN Header_Angle_Conversion */
-/**
-* @brief Function implementing the Angle_Convert thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Angle_Conversion */
+
 void Angle_Conversion(void *argument)
 {
   /* USER CODE BEGIN Angle_Conversion */
@@ -397,6 +394,7 @@ void Angle_Conversion(void *argument)
   {
 	  store_Angle();
 	  osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+
 	  ax = (Vx - 1.65) / 0.300;   // acceleration in g
 	  ay = (Vy - 1.65) / 0.300;
 	  az = (Vz - 1.65) / 0.300;
@@ -434,13 +432,14 @@ void BlinkLED(void *argument)
 * @retval None
 */
 /* USER CODE END Header_Angle_Show */
-void Angle_Show(float x, float y, float z)
+void Angle_Show(char *UART_TX_Buf)
 {
   /* USER CODE BEGIN Angle_Show */
 
   /* Infinite loop */
   for(;;)
   {
+	  HAL_UART_Transmit_IT(&huart2, UART_TX_Buf, 7);
 	  osDelay(1);
   }
   /* USER CODE END Angle_Show */
