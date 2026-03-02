@@ -12,8 +12,8 @@ UART_HandleTypeDef huart2;
 
 float ax, ay, az, angleX, angleY, angleZ;
 uint16_t Vx, Vy, Vz;
-uint8_t TX_Buffer[];
-uint8_t RX_Buffer[]; //Initialize receive buffer for spi comms
+uint8_t TX_Buffer[7];
+uint8_t RX_Buffer[7]; //Initialize receive buffer for spi comms
 
 
 /* Definitions for defaultTask */
