@@ -12,7 +12,7 @@ SPI2 on STM32f401RET6
 - CPHA: 2 Edge (1)
 - MSB First
 
-- PA10: PWM to servo for correction
+- PA6-PA10: PWM to servo for correction
 - PA2, PA3: UART TX,RX, default settings: relaying current angle and corrections to terminal
 - PA1: Receive interrupt signal from accelerometer
 
