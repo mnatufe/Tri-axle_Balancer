@@ -11,6 +11,22 @@ SPI_HandleTypeDef hspi2;
 UART_HandleTypeDef huart2;
 
 float ax, ay, az, angleX, angleY, angleZ;
+
+typedef struct{
+	float ax;
+	float ay;
+	float az;
+	float angleX;
+	float angleY;
+	float angleZ;
+}AngleMsg_t();
+
+typedef struct{
+	uint16_t Vx;
+	uint16_t Vy;
+	uint16_t Vz;
+} RawImu_t();
+
 uint16_t Vx, Vy, Vz;
 uint8_t TX_Buffer[7];
 uint8_t RX_Buffer[7]; //Initialize receive buffer for spi comms
@@ -92,6 +108,11 @@ void Angle_Conversion(void *argument);
 void BlinkLED(void *argument);
 void Angle_Show(char *UART_TX_Buf);
 void Angle_Correct(void *argument);
+void initMotor(void);
+void PWM_Step_1(void);
+void PWM_Step_2(void);
+void PWM_Step_3(void);
+void PWM_Step_4(void);
 
 /* USER CODE BEGIN PFP */
 
@@ -124,7 +145,7 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI2_Init();
   MX_USART2_UART_Init();
-
+  initMotor();
 
   /* Init scheduler */
   osKernelInitialize();
@@ -159,8 +180,10 @@ int main(void)
   /* creation of Print_Angle */
   Print_AngleHandle = osThreadNew(Angle_Show, NULL, &Print_Angle_attributes);
 
-  /* creation of Correct_angle */
+
+  /* creation of Correct_angle, rotates stepper motor to correct position */
   Correct_angleHandle = osThreadNew(Angle_Correct, NULL, &Correct_angle_attributes);
+
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -302,7 +325,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|PWM_Motor_Pin|LED_out_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|PWM_Motor_Pin|PA_7_Pin|PA_8_Pin|PA_9_Pin|LED_out_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET);
@@ -339,7 +362,34 @@ static void MX_GPIO_Init(void)
 
 }
 
-void StartDefaultTask(void *argument)
+void initMotor(void){
+
+}
+
+//PWM Step functions for motor rotation
+void PWM_Step_1(void){
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
+	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
+}
+void PWM_Step_2(void){
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PA_8_Pin, GPIO_PIN_SET);
+	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PA_8_Pin, GPIO_PIN_RESET);
+}
+void PWM_Step_3(void){
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
+	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
+}
+void PWM_Step_4(void){
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
+	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
+}
+
+
+void StartDefaultTask(void *argument) //Initialize baseline angles
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
@@ -350,17 +400,11 @@ void StartDefaultTask(void *argument)
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_Read_Angle */
-/**
-* @brief Function implementing the Read_Angle_Volt thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Read_Angle */
 void Read_Angle(void *argument)
 {
   /* USER CODE BEGIN Read_Angle */
   TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0; //Sets Transmission buffer
+  AngleMsg_t();
   for(;;)
   {
     for(int i = 0; i < 7; i++)
@@ -372,7 +416,7 @@ void Read_Angle(void *argument)
 }
 void store_Angle(void *argument){
 	for(;;){
-		Read_angle();
+		Read_angle();  //////NOT RIGHT, REMOVE LATER---------///////////
 		osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever); //Waits until task done
 		HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET); //CS High, stops transmission
 
@@ -450,7 +494,8 @@ void Angle_Correct(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  /*Motor is 28-BYJ84 Stepper motor, rotates 5.625 degrees per step,
+	   * requires 64 steps to perform a 360 degree rotation*/
   }
   /* USER CODE END Angle_Correct */
 }
