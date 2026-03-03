@@ -5,12 +5,13 @@
 #define		ADXL_READ		0x80
 #define		ADXL_MULTI		0x40
 #define 	ADXL_DATAX0		0x32
+#define		FLAG_SPI_DONE	(1U << 0)
 
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
 
-float ax, ay, az, angleX, angleY, angleZ;
+float referenceAngles[3];
 
 typedef struct{
 	float ax;
@@ -19,13 +20,13 @@ typedef struct{
 	float angleX;
 	float angleY;
 	float angleZ;
-}AngleMsg_t();
+}AngleMsg_t;
 
 typedef struct{
 	uint16_t Vx;
 	uint16_t Vy;
 	uint16_t Vz;
-} RawImu_t();
+} RawImu_t;
 
 uint16_t Vx, Vy, Vz;
 uint8_t TX_Buffer[7];
@@ -45,13 +46,6 @@ const osThreadAttr_t Read_Angle_Volt_attributes = {
   .name = "Read_Angle_Volt",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
-};
-
-osThreadId_t storeAngleHandle;
-const osThreadAttr_t storeAngle_attributes = {
-  .name = "storeAngle",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityAboveNormal
 };
 
 
@@ -102,6 +96,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART2_UART_Init(void);
+void initMotor(baseX, baseY, baseZ);
 void StartDefaultTask(void *argument);
 void Read_Angle(void *argument);
 void Angle_Conversion(void *argument);
@@ -141,11 +136,12 @@ int main(void)
 
   SystemClock_Config();
 
-  /* Initialize all configured peripherals */
+  /* Initialize all configured peripherals and motor*/
   MX_GPIO_Init();
   MX_SPI2_Init();
   MX_USART2_UART_Init();
-  initMotor();
+  /*INSERT MOTOR BASELINE ANGLES BEFORE RUNNING*/
+  initMotor(0.0f, 0.0f, 0.0f);
 
   /* Init scheduler */
   osKernelInitialize();
@@ -167,9 +163,6 @@ int main(void)
 
   /* creation of Read_Angle_Volt */
   Read_Angle_VoltHandle = osThreadNew(Read_Angle, NULL, &Read_Angle_Volt_attributes);
-
-  //Store angle voltage task
-  storeAngleHandle = osThreadNew(store_Angle, NULL, &storeAngle_attributes);
 
   /* creation of Angle_Convert */
   Angle_ConvertHandle = osThreadNew(Angle_Conversion, NULL, &Angle_Convert_attributes);
@@ -362,29 +355,32 @@ static void MX_GPIO_Init(void)
 
 }
 
-void initMotor(void){
-
+/*Set initial accelerometer angle baseline values*/
+void initMotor(float baseX, float baseY, float baseZ){
+	referenceAngles[0] = baseX;
+	referenceAngles[1] = baseY;
+	referenceAngles[2] = baseZ;
 }
 
 //PWM Step functions for motor rotation
 void PWM_Step_1(void){
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
-	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	osDelay(1);
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
 }
 void PWM_Step_2(void){
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PA_8_Pin, GPIO_PIN_SET);
-	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	osDelay(1);
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PA_8_Pin, GPIO_PIN_RESET);
 }
 void PWM_Step_3(void){
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
-	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	osDelay(1);
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
 }
 void PWM_Step_4(void){
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
-	osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	osDelay(1);
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
 }
 
@@ -403,49 +399,56 @@ void StartDefaultTask(void *argument) //Initialize baseline angles
 void Read_Angle(void *argument)
 {
   /* USER CODE BEGIN Read_Angle */
-  TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0; //Sets Transmission buffer
-  AngleMsg_t();
+  RawImu_t raw;
   for(;;)
   {
-    for(int i = 0; i < 7; i++)
+	TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0; //Sets Transmission buffer
+    for(int i = 0; i < 7; i++){
     	TX_Buffer[i] = 0x00;							//Replaces all data in transmission buffer with 0
-	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET); //CS Low, enables ADXL to start transmitting data
-	HAL_SPI_TransmitReceive_IT(&hspi2, TX_Buffer, RX_Buffer, 7);		//SPI_2 pointer, tx buffer, rx buffer, amount of data being exchanged
+    }
+    HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET); //CS Low, enables ADXL to start transmitting data
+
+    HAL_SPI_TransmitReceive_IT(&hspi2, TX_Buffer, RX_Buffer, 7);		//SPI_2 pointer, tx buffer, rx buffer, amount of data being exchanged
+
+	osThreadFlagsWait(FLAG_SPI_DONE, osFlagsWaitAny, osWaitForever); /*Wait until transmission done. Transmission stopped in callback
+	HAL_SPI_TxRxCpltCallback */
+
+	//Move X, Y, and Z voltages into voltage variables. 16-bits for each axis
+	raw.Vx = (int16_t)((RX_Buffer[2] << 8) | RX_Buffer[1]);
+	raw.Vy = (int16_t)((RX_Buffer[4] << 8) | RX_Buffer[3]);
+	raw.Vz = (int16_t)((RX_Buffer[6] << 8) | RX_Buffer[5]);
+
+	//Push to queue
+	osMessageQueuePut(qRawImuHandle, &raw, 0, 0);
   }
   /* USER CODE END Read_Angle */
-}
-void store_Angle(void *argument){
-	for(;;){
-		Read_angle();  //////NOT RIGHT, REMOVE LATER---------///////////
-		osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever); //Waits until task done
-		HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET); //CS High, stops transmission
-
-		//Move X, Y, and Z voltages into voltage variables. 16-bits for each axis
-		Vx = (int16_t)((RX_Buffer[2] << 8) | RX_Buffer[1]);
-		Vy = (int16_t)((RX_Buffer[4] << 8) | RX_Buffer[3]);
-		Vz = (int16_t)((RX_Buffer[6] << 8) | RX_Buffer[5]);
-
-	}
 }
 
 
 void Angle_Conversion(void *argument)
 {
   /* USER CODE BEGIN Angle_Conversion */
+
+	RawImu_t raw;
+	AngleMsg_t ang;
+
   /* Infinite loop */
   for(;;)
   {
-	  store_Angle();
-	  osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+	  /*Get Voltage LSBs from RawImu queue*/
+	  osMessageQueueGet(qRawImuHandle, &raw, NULL, osWaitForever);
 
-	  ax = (Vx - 1.65) / 0.300;   // acceleration in g
-	  ay = (Vy - 1.65) / 0.300;
-	  az = (Vz - 1.65) / 0.300;
+	  /*Accelerometer gives digital counts per g, each LSB is 0.004g*/
+	  ang.ax = raw.Vx * 0.004f;   // acceleration in g
+	  ang.ay = raw.Vy * 0.004f;
+	  ang.az = raw.Vz * 0.004f;
 
-	  angleX = atan2(ax, sqrt(ay*ay + az*az)) * 180.0 / M_PI;     // X-axis
-	  angleY = atan2(ay, sqrt(ax*ax + az*az)) * 180.0 / M_PI;     // Y-axis
-	  angleZ = atan2(sqrt(ax*ax + ay*ay), az) * 180.0 / M_PI;     // Z-axis
-    osDelay(1);
+	  ang.angleX = atan2(ang.ax, sqrt(ang.ay*ang.ay + ang.az*ang.az)) * 180.0 / M_PI;     // X-axis
+	  ang.angleY = atan2(ang.ay, sqrt(ang.ax*ang.ax + ang.az*ang.az)) * 180.0 / M_PI;     // Y-axis
+	  ang.angleZ = atan2(sqrt(ang.ax*ang.ax + ang.ay*ang.ay), ang.az) * 180.0 / M_PI;     // Z-axis
+
+	  /*Push angles onto Angles queue*/
+	  osMessageQueuePut(qAnglesHandle, &ang, 0, 0);
   }
   /* USER CODE END Angle_Conversion */
 }
@@ -491,11 +494,17 @@ void Angle_Show(char *UART_TX_Buf)
 void Angle_Correct(void *argument)
 {
   /* USER CODE BEGIN Angle_Correct */
+	AngleMsg_t ang;
   /* Infinite loop */
   for(;;)
   {
 	  /*Motor is 28-BYJ84 Stepper motor, rotates 5.625 degrees per step,
 	   * requires 64 steps to perform a 360 degree rotation*/
+	  for(int i = 0; i < 3; i++){
+		  if(ang[i] < 0){
+
+		  }
+	  }
   }
   /* USER CODE END Angle_Correct */
 }
@@ -524,7 +533,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_SPI_TxRxCpltCallBack(SPI_HandleTypeDef *hspi){
 	if(hspi->Instance == SPI2){
 		HAL_GPIO_WritePin(SPI_CS_PORT, SPI_CS_PIN, GPIO_PIN_SET); //CS HIGH
-		osThreadFlagsSet(realTaskHandle, 0x01); //Wake task
+		osThreadFlagsSet(Read_Angle_VoltHandle, FLAG_SPI_DONE); //Wake task
 	}
 }
 
