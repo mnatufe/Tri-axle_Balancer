@@ -28,9 +28,9 @@ typedef struct{
 	uint16_t Vz;
 } RawImu_t;
 
-uint16_t Vx, Vy, Vz;
 uint8_t TX_Buffer[7];
 uint8_t RX_Buffer[7]; //Initialize receive buffer for spi comms
+float currentAngles[3];
 
 
 /* Definitions for defaultTask */
@@ -108,6 +108,8 @@ void PWM_Step_1(void);
 void PWM_Step_2(void);
 void PWM_Step_3(void);
 void PWM_Step_4(void);
+void CW_Rotation(void);
+void CCW_Rotation(void);
 
 /* USER CODE BEGIN PFP */
 
@@ -384,6 +386,19 @@ void PWM_Step_4(void){
 	HAL_GPIO_WritePin(GPIOA, PA_7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
 }
 
+void CW_Rotation(void){
+	PWM_Step_1();
+	PWM_Step_2();
+	PWM_Step_3();
+	PWM_Step_4();
+}
+
+void CCW_Rotation(void){
+	PWM_Step_4();
+	PWM_Step_3();
+	PWM_Step_2();
+	PWM_Step_1();
+}
 
 void StartDefaultTask(void *argument) //Initialize baseline angles
 {
@@ -501,9 +516,16 @@ void Angle_Correct(void *argument)
 	  /*Motor is 28-BYJ84 Stepper motor, rotates 5.625 degrees per step,
 	   * requires 64 steps to perform a 360 degree rotation*/
 	  for(int i = 0; i < 3; i++){
-		  if(ang[i] < 0){
+		  currentAngles[i] = referenceAngles[i];		//Reset Angle to reference after every correction
+	  }
 
+	  /*X angle (1 motor per axis)*/
+	  if((ang.angleX != referenceAngles[0]) && (ang.angleX < 0)){
+		  while(ang.angleX < referenceAngles[0]){
+			  CCW_Rotation();
+			  currentAngles[0] += 5.25;		//Adds 5.625 degrees for each step taken
 		  }
+
 	  }
   }
   /* USER CODE END Angle_Correct */
