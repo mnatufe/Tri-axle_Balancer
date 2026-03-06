@@ -6,12 +6,16 @@
 #define		ADXL_MULTI		0x40
 #define 	ADXL_DATAX0		0x32
 #define		FLAG_SPI_DONE	(1U << 0)
+#define		FLAG_X_DONE		(1U << 0)
+#define		FLAG_Y_DONE		(1U << 0)
+#define		FLAG_Z_DONE		(1U << 0)
 
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
 
 float referenceAngles[3];
+float currentAngles[3];
 
 typedef struct{
 	float ax;
@@ -110,6 +114,10 @@ void PWM_Step_3(void);
 void PWM_Step_4(void);
 void CW_Rotation(void);
 void CCW_Rotation(void);
+void Correct_X(void);
+void Correct_Y(void);
+void Correct_Z(void);
+
 
 /* USER CODE BEGIN PFP */
 
@@ -337,8 +345,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Interrupt_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD2_Pin PWM_Motor_Pin LED_out_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin|PWM_Motor_Pin|LED_out_Pin;
+  /*Configure GPIO pins : LD2_Pin PWM pins LED_out_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|PWM_Motor_Pin|LED_out_Pin|PA_7_Pin|PA_8_Pin|PA_9_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -399,6 +407,52 @@ void CCW_Rotation(void){
 	PWM_Step_2();
 	PWM_Step_1();
 }
+
+void Correct_X(void){
+	  if((ang.angleX != referenceAngles[0]) && (ang.angleX < 0)){
+		  while(ang.angleX < referenceAngles[0]){
+			  CCW_Rotation();
+			  currentAngles[0] += 5.625;		//Adds 5.625 degrees for each step taken
+		  }
+	  }
+	  else if((ang.angleX != referenceAngles[0]) && (ang.angleX > 0)){
+		  while(ang.angleX > referenceAngles[0]){
+			  CW_Rotation();
+			  currentAngles[0] -= 5.625;		//Subtracts 5.635 degrees for each CW step taken
+		  }
+	  }
+	  osThreadFlagsSet()
+}
+void Correct_Y(void){
+	  if((ang.angleY != referenceAngles[1]) && (ang.angleY < 0)){
+		  while(ang.angleY < referenceAngles[1]){
+			  CCW_Rotation();
+			  currentAngles[1] += 5.625;		//Adds 5.625 degrees for each step taken
+		  }
+	  }
+	  else if((ang.angleY != referenceAngles[1]) && (ang.angleY > 0)){
+		  while(ang.angleY > referenceAngles[1]){
+			  CW_Rotation();
+			  currentAngles[1] -= 5.625;		//Subtracts 5.635 degrees for each CW step taken
+		  }
+	  }
+}
+void Correct_Z(void){
+	  if((ang.angleZ != referenceAngles[2]) && (ang.angleZ < 0)){
+		  while(ang.angleZ < referenceAngles[2]){
+			  CCW_Rotation();
+			  currentAngles[2] += 5.625;		//Adds 5.625 degrees for each step taken
+		  }
+	  }
+	  else if((ang.angleZ != referenceAngles[2]) && (ang.angleZ > 0)){
+		  while(ang.angleZ > referenceAngles[2]){
+			  CW_Rotation();
+			  currentAngles[2] -= 5.625;		//Subtracts 5.635 degrees for each CW step taken
+		  }
+	  }
+}
+
+
 
 void StartDefaultTask(void *argument) //Initialize baseline angles
 {
@@ -519,14 +573,12 @@ void Angle_Correct(void *argument)
 		  currentAngles[i] = referenceAngles[i];		//Reset Angle to reference after every correction
 	  }
 
-	  /*X angle (1 motor per axis)*/
-	  if((ang.angleX != referenceAngles[0]) && (ang.angleX < 0)){
-		  while(ang.angleX < referenceAngles[0]){
-			  CCW_Rotation();
-			  currentAngles[0] += 5.25;		//Adds 5.625 degrees for each step taken
-		  }
-
-	  }
+	  /*X axis (1 motor per axis)*/
+	  Correct_X();
+	  /*Y axis*/
+	  Correct_Y();
+	  /*Z axis*/
+	  Correct_Z();
   }
   /* USER CODE END Angle_Correct */
 }
