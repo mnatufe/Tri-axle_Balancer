@@ -6,9 +6,9 @@
 #define		ADXL_MULTI		0x40
 #define 	ADXL_DATAX0		0x32
 #define		FLAG_SPI_DONE	(1U << 0)
-#define		FLAG_X_DONE		(1U << 0)
-#define		FLAG_Y_DONE		(1U << 0)
-#define		FLAG_Z_DONE		(1U << 0)
+#define		FLAG_X_DONE		(1U << 1)
+#define		FLAG_Y_DONE		(1U << 2)
+#define		FLAG_Z_DONE		(1U << 3)
 
 SPI_HandleTypeDef hspi2;
 
@@ -27,15 +27,13 @@ typedef struct{
 }AngleMsg_t;
 
 typedef struct{
-	uint16_t Vx;
-	uint16_t Vy;
-	uint16_t Vz;
+	int16_t xRaw;			//Signed twos complement values from accelerometer
+	int16_t yRaw;
+	int16_t zRaw;
 } RawImu_t;
 
 uint8_t TX_Buffer[7];
 uint8_t RX_Buffer[7]; //Initialize receive buffer for spi comms
-float currentAngles[3];
-
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -100,23 +98,22 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART2_UART_Init(void);
-void initMotor(baseX, baseY, baseZ);
+void initMotor(float baseX, float baseY, float baseZ);
 void StartDefaultTask(void *argument);
 void Read_Angle(void *argument);
 void Angle_Conversion(void *argument);
 void BlinkLED(void *argument);
 void Angle_Show(char *UART_TX_Buf);
 void Angle_Correct(void *argument);
-void initMotor(void);
 void PWM_Step_1(void);
 void PWM_Step_2(void);
 void PWM_Step_3(void);
 void PWM_Step_4(void);
 void CW_Rotation(void);
 void CCW_Rotation(void);
-void Correct_X(void);
-void Correct_Y(void);
-void Correct_Z(void);
+void Correct_X(AngleMsg_t *ang);
+void Correct_Y(AngleMsg_t *ang);
+void Correct_Z(AngleMsg_t *ang);
 
 
 /* USER CODE BEGIN PFP */
@@ -408,48 +405,44 @@ void CCW_Rotation(void){
 	PWM_Step_1();
 }
 
-void Correct_X(void){
-	  if((ang.angleX != referenceAngles[0]) && (ang.angleX < 0)){
-		  while(ang.angleX < referenceAngles[0]){
-			  CCW_Rotation();
-			  currentAngles[0] += 5.625;		//Adds 5.625 degrees for each step taken
-		  }
-	  }
-	  else if((ang.angleX != referenceAngles[0]) && (ang.angleX > 0)){
-		  while(ang.angleX > referenceAngles[0]){
-			  CW_Rotation();
-			  currentAngles[0] -= 5.625;		//Subtracts 5.635 degrees for each CW step taken
-		  }
-	  }
-	  osThreadFlagsSet()
+void Correct_X(AngleMsg_t *ang){
+	float error = referenceAngles[0] - ang->angleX;		//Sets tilt error value
+	if(fabsf(error) <= 2.5f){		//Doesn't correct if error is less than +/- 2.5 degrees
+		return;
+	}
+	if(error > 0){
+		CW_Rotation;			//Rotates clockwise if error is positive
+	}
+	else{
+		CCW_Rotation;		//Rotates ccw is error is negative (rotation directions based off unit circle)
+	}
+	osThreadFlagsSet(Angle_ConvertHandle, FLAG_X_DONE);
 }
-void Correct_Y(void){
-	  if((ang.angleY != referenceAngles[1]) && (ang.angleY < 0)){
-		  while(ang.angleY < referenceAngles[1]){
-			  CCW_Rotation();
-			  currentAngles[1] += 5.625;		//Adds 5.625 degrees for each step taken
-		  }
-	  }
-	  else if((ang.angleY != referenceAngles[1]) && (ang.angleY > 0)){
-		  while(ang.angleY > referenceAngles[1]){
-			  CW_Rotation();
-			  currentAngles[1] -= 5.625;		//Subtracts 5.635 degrees for each CW step taken
-		  }
-	  }
+void Correct_Y(AngleMsg_t *ang){
+	float error = referenceAngles[1] - ang->angleX;		//Sets tilt error value
+	if(fabsf(error) <= 2.5f){		//Doesn't correct if error is less than +/- 2.5 degree
+		return;
+	}
+	if(error > 0){
+		CW_Rotation;			//Rotates clockwise if error is positive
+	}
+	else{
+		CCW_Rotation;		//Rotates ccw is error is negative (rotation directions based off unit circle)
+	}
+	osThreadFlagsSet(Angle_ConvertHandle, FLAG_Y_DONE);
 }
-void Correct_Z(void){
-	  if((ang.angleZ != referenceAngles[2]) && (ang.angleZ < 0)){
-		  while(ang.angleZ < referenceAngles[2]){
-			  CCW_Rotation();
-			  currentAngles[2] += 5.625;		//Adds 5.625 degrees for each step taken
-		  }
-	  }
-	  else if((ang.angleZ != referenceAngles[2]) && (ang.angleZ > 0)){
-		  while(ang.angleZ > referenceAngles[2]){
-			  CW_Rotation();
-			  currentAngles[2] -= 5.625;		//Subtracts 5.635 degrees for each CW step taken
-		  }
-	  }
+void Correct_Z(AngleMsg_t *ang){
+	float error = referenceAngles[2] - ang->angleZ;
+	if(fabsf(error) <= 1.0f){
+		return;
+	}
+	if(error > 0){
+		CW_Rotation;
+	}
+	else{
+		CCW_Rotation;
+	}
+	osThreadFlagsSet(Angle_ConvertHandle, FLAG_Z_DONE);
 }
 
 
@@ -471,8 +464,8 @@ void Read_Angle(void *argument)
   RawImu_t raw;
   for(;;)
   {
-	TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0; //Sets Transmission buffer
-    for(int i = 0; i < 7; i++){
+	TX_Buffer[0] = ADXL_READ | ADXL_MULTI | ADXL_DATAX0; //Sets Transmission buffer with SPI command byte
+    for(int i = 1; i < 7; i++){
     	TX_Buffer[i] = 0x00;							//Replaces all data in transmission buffer with 0
     }
     HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET); //CS Low, enables ADXL to start transmitting data
@@ -482,10 +475,10 @@ void Read_Angle(void *argument)
 	osThreadFlagsWait(FLAG_SPI_DONE, osFlagsWaitAny, osWaitForever); /*Wait until transmission done. Transmission stopped in callback
 	HAL_SPI_TxRxCpltCallback */
 
-	//Move X, Y, and Z voltages into voltage variables. 16-bits for each axis
-	raw.Vx = (int16_t)((RX_Buffer[2] << 8) | RX_Buffer[1]);
-	raw.Vy = (int16_t)((RX_Buffer[4] << 8) | RX_Buffer[3]);
-	raw.Vz = (int16_t)((RX_Buffer[6] << 8) | RX_Buffer[5]);
+	//Move X, Y, and Z counts into variables. 16-bits for each axis
+	raw.xRaw = (int16_t)((RX_Buffer[2] << 8) | RX_Buffer[1]);
+	raw.yRaw = (int16_t)((RX_Buffer[4] << 8) | RX_Buffer[3]);
+	raw.zRaw = (int16_t)((RX_Buffer[6] << 8) | RX_Buffer[5]);
 
 	//Push to queue
 	osMessageQueuePut(qRawImuHandle, &raw, 0, 0);
@@ -508,9 +501,9 @@ void Angle_Conversion(void *argument)
 	  osMessageQueueGet(qRawImuHandle, &raw, NULL, osWaitForever);
 
 	  /*Accelerometer gives digital counts per g, each LSB is 0.004g*/
-	  ang.ax = raw.Vx * 0.004f;   // acceleration in g
-	  ang.ay = raw.Vy * 0.004f;
-	  ang.az = raw.Vz * 0.004f;
+	  ang.ax = raw.xRaw * 0.004f;   // acceleration in g
+	  ang.ay = raw.yRaw * 0.004f;
+	  ang.az = raw.zRaw * 0.004f;
 
 	  ang.angleX = atan2(ang.ax, sqrt(ang.ay*ang.ay + ang.az*ang.az)) * 180.0 / M_PI;     // X-axis
 	  ang.angleY = atan2(ang.ay, sqrt(ang.ax*ang.ax + ang.az*ang.az)) * 180.0 / M_PI;     // Y-axis
@@ -567,18 +560,16 @@ void Angle_Correct(void *argument)
   /* Infinite loop */
   for(;;)
   {
+	  osMessageQueueGet(qAnglesHandle, &ang, NULL, osWaitForever);
 	  /*Motor is 28-BYJ84 Stepper motor, rotates 5.625 degrees per step,
 	   * requires 64 steps to perform a 360 degree rotation*/
-	  for(int i = 0; i < 3; i++){
-		  currentAngles[i] = referenceAngles[i];		//Reset Angle to reference after every correction
-	  }
 
 	  /*X axis (1 motor per axis)*/
-	  Correct_X();
+	  Correct_X(&ang);
 	  /*Y axis*/
-	  Correct_Y();
+	  Correct_Y(&ang);
 	  /*Z axis*/
-	  Correct_Z();
+	  Correct_Z(&ang);
   }
   /* USER CODE END Angle_Correct */
 }
@@ -604,9 +595,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   /* USER CODE END Callback 1 */
 }
-void HAL_SPI_TxRxCpltCallBack(SPI_HandleTypeDef *hspi){
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
 	if(hspi->Instance == SPI2){
-		HAL_GPIO_WritePin(SPI_CS_PORT, SPI_CS_PIN, GPIO_PIN_SET); //CS HIGH
+		HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET); //CS HIGH
 		osThreadFlagsSet(Read_Angle_VoltHandle, FLAG_SPI_DONE); //Wake task
 	}
 }
