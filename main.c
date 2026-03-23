@@ -40,14 +40,14 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityBelowNormal,
 };
 /* Definitions for Read_Angle_Volt */
 osThreadId_t Read_Angle_VoltHandle;
 const osThreadAttr_t Read_Angle_Volt_attributes = {
   .name = "Read_Angle_Volt",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 
@@ -70,7 +70,7 @@ osThreadId_t Print_AngleHandle;
 const osThreadAttr_t Print_Angle_attributes = {
   .name = "Print_Angle",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityBelowNormal,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Correct_angle */
 osThreadId_t Correct_angleHandle;
