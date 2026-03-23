@@ -9,6 +9,7 @@
 #define		FLAG_X_DONE		(1U << 1)
 #define		FLAG_Y_DONE		(1U << 2)
 #define		FLAG_Z_DONE		(1U << 3)
+#define		FLAG_UART_DONE	(1U << 4)
 
 SPI_HandleTypeDef hspi2;
 
@@ -540,13 +541,16 @@ void BlinkLED(void *argument)
 * @retval None
 */
 /* USER CODE END Header_Angle_Show */
-void Angle_Show(char *UART_TX_Buf)
+//Send angle values to uart terminal
+void Angle_Show(void *argument)
 {
   /* USER CODE BEGIN Angle_Show */
-
+	AngleMsg_t ang;
   /* Infinite loop */
   for(;;)
   {
+	  osMessageQueueGet(qAnglesHandle, &ang, NULL, osWaitForever);
+	  
 	  HAL_UART_Transmit_IT(&huart2, UART_TX_Buf, 7);
 	  osDelay(1);
   }
@@ -601,7 +605,11 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
 		osThreadFlagsSet(Read_Angle_VoltHandle, FLAG_SPI_DONE); //Wake task
 	}
 }
-
+void HAL_UART_TxCpltCallback(SPI_HandleTypeDef *huart2){
+	if(hspi->Instance == UART2){
+		osThreadFlagsSet(Read_Angle_VoltHandle, FLAG_UART_DONE); //Wake task
+	}
+}
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
