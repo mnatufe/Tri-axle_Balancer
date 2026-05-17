@@ -2,11 +2,15 @@
 Uses 3 adxl345 to detect and self correct positioning on 3 axles.
 
 --------------Configuration----------------------
-SPI2 on STM32f401RET6
-- PB10: SCK
-- PC2: MISO
-- PC3: MOSI
-- PB12: CS
+
+--------------------SPI Bus------------------------
+hspi2 on STM32 (MASTER), hspi on ESP32 (SLAVE), SPI on ADXL345 (SLAVE)
+- SCLK: STM32 PB10, ADXL SCL, ESP32 HSPI CLK (GPIO14)
+- MISO: STM32 PC2, ADXL SDO, ESP32 HSPI MISO (GPIO12)
+- MOSI: STM32 PC3, ADXL SDA, ES32 HSPI MOSI (GPIO13)
+- CS/SS: STM32 PB12 -> ADXL CS, STM32 PB13 -> ESP32 HSPI CS0 (GPIO15)
+------------------End SPI Bus-----------------------
+  
 - PA12: LED_OUT (for testing)
 - CPOL: HIGH (1)
 - CPHA: 2 Edge (1)
