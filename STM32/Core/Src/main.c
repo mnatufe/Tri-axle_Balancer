@@ -2,6 +2,12 @@
 #include "cmsis_os.h"
 #include <math.h>
 
+
+
+#define		ADXL_DEVID		0x00
+#define		ADXL_POWER_CTL	0x2D
+#define		ADXL_DATA_FORMAT 0x31
+
 #define		ADXL_READ		0x80
 #define		ADXL_MULTI		0x40
 #define 	ADXL_DATAX0		0x32
@@ -103,6 +109,7 @@ void initMotor(float baseX, float baseY, float baseZ);
 void StartDefaultTask(void *argument);
 void Read_Angle(void *argument);
 void Angle_Conversion(void *argument);
+void initADXL(void);
 void BlinkLED(void *argument);
 void Angle_Show(void *argument);
 void Angle_Correct(void *argument);
@@ -150,6 +157,7 @@ int main(void)
   MX_USART2_UART_Init();
   /*INSERT MOTOR BASELINE ANGLES BEFORE RUNNING*/
   initMotor(0.0f, 0.0f, 0.0f);
+  initADXL();
 
   /* Init scheduler */
   osKernelInitialize();
@@ -326,10 +334,11 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|PWM_Motor_Pin|PA7_Pin|PA8_Pin|PA9_Pin|LED_out_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|Step_Pin_1_Pin|Step_PIN_2_Pin|Step_PIN_3_Pin
+                          |Step_PIN_5_Pin|LED_out_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, SPI_CS_Pin|ESP_SPI_CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -337,26 +346,27 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Interrupt_Pin */
-  GPIO_InitStruct.Pin = Interrupt_Pin;
+  /*Configure GPIO pin : ADXL_INT1_Pin */
+  GPIO_InitStruct.Pin = ADXL_INT1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(Interrupt_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(ADXL_INT1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD2_Pin PWM pins LED_out_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin|PWM_Motor_Pin|LED_out_Pin|PA7_Pin|PA8_Pin|PA9_Pin;
+  /*Configure GPIO pins : LD2_Pin Step_Pin_1_Pin Step_PIN_2_Pin Step_PIN_3_Pin
+                           Step_PIN_5_Pin LED_out_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|Step_Pin_1_Pin|Step_PIN_2_Pin|Step_PIN_3_Pin
+                          |Step_PIN_5_Pin|LED_out_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : SPI_CS_Pin */
-  GPIO_InitStruct.Pin = SPI_CS_Pin;
+  /*Configure GPIO pins : SPI_CS_Pin ESP_SPI_CS_Pin */
+  GPIO_InitStruct.Pin = SPI_CS_Pin|ESP_SPI_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(SPI_CS_GPIO_Port, &GPIO_InitStruct);
-
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 15, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
@@ -370,26 +380,33 @@ void initMotor(float baseX, float baseY, float baseZ){
 	referenceAngles[2] = baseZ;
 }
 
+void initADXL(void){
+	osDelay(2); //Wait for accelerometer to boot
+
+
+}
+
+
 //PWM Step functions for motor rotation
 void PWM_Step_1(void){
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, Step_Pin_1_Pin|Step_PIN_5_Pin, GPIO_PIN_SET);
 	osDelay(1);
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, Step_Pin_1_Pin|Step_PIN_5_Pin, GPIO_PIN_RESET);
 }
 void PWM_Step_2(void){
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PA8_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, Step_Pin_1_Pin|Step_PIN_2_Pin, GPIO_PIN_SET);
 	osDelay(1);
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PA8_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, Step_Pin_1_Pin|Step_PIN_2_Pin, GPIO_PIN_RESET);
 }
 void PWM_Step_3(void){
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, Step_PIN_2_Pin|Step_PIN_3_Pin, GPIO_PIN_SET);
 	osDelay(1);
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, Step_PIN_2_Pin|Step_PIN_3_Pin, GPIO_PIN_RESET);
 }
 void PWM_Step_4(void){
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PWM_Motor_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, Step_PIN_3_Pin|Step_PIN_5_Pin, GPIO_PIN_SET);
 	osDelay(1);
-	HAL_GPIO_WritePin(GPIOA, PA7_Pin|PWM_Motor_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, Step_PIN_3_Pin|Step_PIN_5_Pin, GPIO_PIN_RESET);
 }
 
 void CW_Rotation(void){
@@ -412,10 +429,10 @@ void Correct_X(AngleMsg_t *ang){
 		return;
 	}
 	if(error > 0){
-		CW_Rotation;			//Rotates clockwise if error is positive
+		CW_Rotation();			//Rotates clockwise if error is positive
 	}
 	else{
-		CCW_Rotation;		//Rotates ccw is error is negative (rotation directions based off unit circle)
+		CCW_Rotation();		//Rotates ccw is error is negative (rotation directions based off unit circle)
 	}
 	osThreadFlagsSet(Angle_ConvertHandle, FLAG_X_DONE);
 }
@@ -425,10 +442,10 @@ void Correct_Y(AngleMsg_t *ang){
 		return;
 	}
 	if(error > 0){
-		CW_Rotation;			//Rotates clockwise if error is positive
+		CW_Rotation();			//Rotates clockwise if error is positive
 	}
 	else{
-		CCW_Rotation;		//Rotates ccw is error is negative (rotation directions based off unit circle)
+		CCW_Rotation();		//Rotates ccw is error is negative (rotation directions based off unit circle)
 	}
 	osThreadFlagsSet(Angle_ConvertHandle, FLAG_Y_DONE);
 }
@@ -438,10 +455,10 @@ void Correct_Z(AngleMsg_t *ang){
 		return;
 	}
 	if(error > 0){
-		CW_Rotation;
+		CW_Rotation();
 	}
 	else{
-		CCW_Rotation;
+		CCW_Rotation();
 	}
 	osThreadFlagsSet(Angle_ConvertHandle, FLAG_Z_DONE);
 }
