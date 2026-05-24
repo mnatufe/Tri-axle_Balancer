@@ -16,7 +16,7 @@ hspi2 on STM32 (MASTER), hspi on ESP32 (SLAVE), SPI on ADXL345 (SLAVE)
 - CPHA: 2 Edge (1)
 - MSB First
 
-- PA7-PA10: PWM to servo for correction
+- PA7-PA10: PWM to stepper for correction
 - PA2, PA3: UART TX,RX, default settings: relaying current angle and corrections to terminal
 - PA1: Receive interrupt signal from accelerometer
 
